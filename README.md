@@ -19,31 +19,91 @@ A real-time recommendation system implementing industry best practices, trained 
 
 ## Architecture
 
+### System Overview
+
 ```mermaid
 graph TB
-    A[User Request] --> B[Feature Store - Feast]
+    A[User Request] --> B[Feature Store]
     B --> C[Two-Tower Model]
     C --> D[Faiss ANN Retrieval]
-    D --> E[Ranking Layer - Optional]
+    D --> E[Ranking Layer]
     E --> F[Ranked Recommendations]
     
     G[Kafka Streaming] --> B
-    H[MLflow Tracking] --> C
     I[Prometheus/Grafana] --> A
-    
-    subgraph "ML Pipeline"
-        C
-        D
-        E
-    end
-    
-    subgraph "Infrastructure"
-        B
-        G
-        H
-        I
-    end
 ```
+
+### Offline Training vs Online Serving
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        OFFLINE (Training)                                │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                  │
+│  │  MovieLens  │───▶│  Two-Tower  │───▶│   Model     │                  │
+│  │    Data     │    │  Training   │    │ Checkpoint  │                  │
+│  └─────────────┘    └─────────────┘    └──────┬──────┘                  │
+│                                               │                          │
+└───────────────────────────────────────────────┼──────────────────────────┘
+                                                │ Load
+┌───────────────────────────────────────────────▼──────────────────────────┐
+│                        ONLINE (Serving)                                  │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌──────────┐  │
+│  │   User      │───▶│  User Tower │───▶│    Faiss    │───▶│  Top-K   │  │
+│  │  Request    │    │  Embedding  │    │   Search    │    │  Items   │  │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └──────────┘  │
+│                                               ▲                          │
+│                     ┌─────────────┐           │                          │
+│                     │ Item Tower  │───────────┘                          │
+│                     │ (Precomputed)│  Item Embeddings                    │
+│                     └─────────────┘                                      │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+## Design Decisions
+
+This section explains the trade-offs made in this system. **Senior engineers discuss trade-offs, not just tools.**
+
+### Why Two-Tower Architecture?
+
+| Alternative | Pros | Cons | Our Choice |
+|-------------|------|------|------------|
+| **Two-Tower** | O(1) user inference, precomputed items | Less expressive than cross-attention | **Selected** |
+| Matrix Factorization | Simple, interpretable | Can't handle rich features | Rejected |
+| Cross-Encoder | Most accurate | O(n) per request, doesn't scale | Rejected |
+
+**Decision**: Two-Tower balances **retrieval speed** (~1ms) with **accuracy**. User embeddings are computed once per request; item embeddings are precomputed and indexed in Faiss.
+
+### Why In-Memory Feature Store?
+
+| Alternative | Pros | Cons | Our Choice |
+|-------------|------|------|------------|
+| **SimpleFeatureStore** | Zero setup, fast demo | OOM at >100K users | **Selected (Demo)** |
+| Redis | Production-ready, 10K+ QPS | Requires infrastructure | Production |
+| Feast | Full feature versioning | Complex setup | Enterprise |
+
+**Decision**: `SimpleFeatureStore` is a **demonstration interface**. The abstraction allows swapping to Redis/Feast without changing application code.
+
+> **Production Note**: For >10K QPS, replace `SimpleFeatureStore` with Redis. The interface is identical.
+
+### Why Faiss over Milvus?
+
+| Alternative | Pros | Cons | Our Choice |
+|-------------|------|------|------------|
+| **Faiss** | Single binary, CPU/GPU, well-tested | No built-in persistence | **Selected** |
+| Milvus | Distributed, persistent | Operational overhead | Available |
+| Annoy | Memory-mapped, simple | Slower than Faiss | Deprecated |
+
+**Decision**: Faiss provides **sub-millisecond retrieval** with zero operational overhead. Milvus is available in the codebase for distributed deployments.
+
+### Why XGBoost Ranker?
+
+| Alternative | Pros | Cons | Our Choice |
+|-------------|------|------|------------|
+| **XGBoost** | Fast inference, interpretable | Limited feature interactions | **Selected** |
+| LightGBM | Faster training | Similar to XGBoost | Available |
+| DeepFM | Neural feature interactions | Slower inference | Available |
+
+**Decision**: XGBoost provides **<5ms ranking** with feature importance for debugging. DeepFM is available for when accuracy > latency.
 
 ## Benchmark Results (MovieLens-1M)
 
@@ -98,55 +158,40 @@ History and Context. ACM TiiS 5, 4, Article 19.
 
 ## Quick Start
 
-### 1. Train on MovieLens-1M
-
 ```bash
-# Download MovieLens-1M (if not already present)
-wget https://files.grouplens.org/datasets/movielens/ml-1m.zip
-unzip ml-1m.zip
+# Setup
+make install
 
-# Train the Two-Tower model
-python scripts/train_movielens.py --data-path ml-1m --epochs 20 --batch-size 1024
+# Train (synthetic data - quick demo)
+make train
 
-# Expected output:
-# Epoch 1/20 - Train Loss: 4.2341, Val Loss: 4.1892, Time: 45.2s
-# ...
-# Training completed. Best validation loss: 3.8234
+# Train (MovieLens-1M - full evaluation)
+make train-movielens
+
+# Run tests
+make test
+
+# Start server
+make serve
+
+# See all commands
+make help
 ```
 
-### 2. Evaluate the Model
+### Manual Commands (if not using Make)
 
 ```bash
-# Run comprehensive evaluation
+# Train on synthetic data
+python scripts/train.py
+
+# Train on MovieLens-1M
+python scripts/train_movielens.py --data-path ml-1m --epochs 20
+
+# Evaluate
 python scripts/evaluate_model.py --checkpoint models/checkpoints/two_tower_best.pth
 
-# Expected output:
-# ==================================================
-# SUMMARY
-# ==================================================
-# Metric               Value
-# Recall@10            0.0823
-# NDCG@10              0.0512
-# Hit Rate@10          0.5534
-# MRR                  0.1523
-# Coverage             0.4021
-```
-
-### 3. Run Tests
-
-```bash
-# Run full test suite
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ --cov=src --cov-report=term-missing
-```
-
-### 4. Start the API Server
-
-```bash
-# Start all services
-docker-compose up -d
+# Start server
+python -c "from src.serving import run_server; run_server()"
 
 # Test recommendations
 curl -X POST http://localhost:8000/recommend \
@@ -176,9 +221,9 @@ recsys/
 │   └── movielens_evaluation.ipynb  # Evaluation notebook
 ├── results/                   # Evaluation results
 ├── scripts/                   # CLI entry points only (no classes!)
-│   ├── train_movielens.py     # MovieLens training CLI
-│   ├── train_portfolio_model.py # Quick demo training
-│   └── evaluate_model.py      # Evaluation CLI
+│   ├── train.py               # Train on synthetic data
+│   ├── train_movielens.py     # Train on MovieLens-1M
+│   └── evaluate_model.py      # Model evaluation
 ├── src/
 │   ├── api/                   # API layer (routes separated from logic)
 │   │   ├── app.py             # FastAPI app factory
@@ -204,7 +249,7 @@ recsys/
 │   │   ├── two_tower.py       # Two-Tower architecture
 │   │   └── ranking_models.py  # XGBoost, LightGBM, DeepFM
 │   ├── serving/               # Service logic & retrieval
-│   │   ├── api.py             # RecommendationService class
+│   │   ├── service.py         # RecommendationService class
 │   │   └── retrieval.py       # Faiss/Milvus index
 │   ├── streaming/             # Kafka consumers
 │   └── constants.py           # Centralized configuration constants
@@ -214,32 +259,35 @@ recsys/
 │   └── test_data_loading.py
 ├── docker-compose.yml         # Service orchestration
 ├── Dockerfile                 # Container definition
+├── Makefile                   # Development commands
 ├── requirements.txt           # Python dependencies
 ├── CONTRIBUTING.md            # Development guidelines
 └── README.md
 ```
 
-### Architecture Overview
+### Module Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      scripts/ (CLI only)                     │
-│   train_movielens.py   train_portfolio_model.py              │
+│                    scripts/ (thin CLI only)                  │
+│         train.py    train_movielens.py    evaluate.py        │
 └─────────────────────────────┬───────────────────────────────┘
                               │ imports
 ┌─────────────────────────────▼───────────────────────────────┐
 │                         src/                                 │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │
 │  │  training/   │  │    api/      │  │    serving/      │   │
-│  │  - Trainers  │  │  - Routes    │  │  - Service logic │   │
+│  │  - Trainers  │  │  - Routes    │  │  - Service       │   │
 │  │  - Datasets  │  │  - Schemas   │  │  - Retrieval     │   │
 │  └──────────────┘  └──────────────┘  └──────────────────┘   │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │
 │  │   models/    │  │  features/   │  │     data/        │   │
-│  │  - TwoTower  │  │  - Store     │  │  - MovieLens     │   │
+│  │  - TwoTower  │  │  - Store*    │  │  - MovieLens     │   │
 │  │  - Rankers   │  │  - Engineer  │  │  - Synthetic     │   │
 │  └──────────────┘  └──────────────┘  └──────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
+
+* SimpleFeatureStore is for demo. Use Redis/Feast in production (see Design Decisions).
 ```
 
 ## Installation

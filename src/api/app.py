@@ -16,8 +16,8 @@ from .routes import (
     register_management_routes,
 )
 
-# Import service from serving module (service logic stays in serving for now)
-from ..serving.api import RecommendationService
+# Import service from serving module
+from ..serving.service import RecommendationService
 
 
 # Global service instance
