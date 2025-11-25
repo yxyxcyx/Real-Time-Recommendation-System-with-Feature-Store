@@ -303,7 +303,7 @@ recsys/
 
 1. **Clone the repository**
 ```bash
-cd /Users/chiayuxuan/Documents/RecSys/recsys
+cd /yourpath
 ```
 
 2. **Create and activate virtual environment**
