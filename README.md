@@ -61,7 +61,7 @@ graph TB
 
 ## Design Decisions
 
-This section explains the trade-offs made in this system. **Senior engineers discuss trade-offs, not just tools.**
+This section explains the trade-offs made in this system.
 
 ### Why Two-Tower Architecture?
 
