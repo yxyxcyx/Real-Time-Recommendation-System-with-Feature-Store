@@ -1,5 +1,6 @@
 """FastAPI service for real-time recommendations with shadow deployment."""
 
+import hashlib
 import random
 import time
 from contextlib import asynccontextmanager
@@ -18,7 +19,7 @@ from ..config import get_config
 from ..features import FeatureStore
 from ..models import TwoTowerModel, create_ranking_model
 from .retrieval import RetrievalEngine
-from .shadow_deployment import ShadowDeploymentManager
+# NOTE: ShadowDeploymentManager removed - see REFACTORING_BLUEPRINT.md
 
 
 # Request/Response Models
@@ -76,18 +77,52 @@ class FeedbackRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
-# Metrics
-recommendation_counter = Counter(
-    "recommendations_total",
-    "Total number of recommendations served",
-    ["model_version", "status"]
-)
+# Metrics - Handle duplicate registration gracefully
+from prometheus_client import CollectorRegistry, generate_latest
 
-recommendation_latency = Histogram(
-    "recommendation_latency_seconds",
-    "Recommendation request latency",
-    ["model_version", "stage"]
-)
+# Create metrics with duplicate handling
+try:
+    recommendation_counter = Counter(
+        "recommendations_total",
+        "Total number of recommendations served",
+        ["model_version", "status"]
+    )
+    recommendation_latency = Histogram(
+        "recommendation_latency_seconds",
+        "Recommendation request latency",
+        ["model_version", "stage"]
+    )
+except ValueError as e:
+    # Metrics already registered, get them from registry
+    from prometheus_client import REGISTRY
+    
+    # Find existing metrics
+    recommendation_counter = None
+    recommendation_latency = None
+    
+    for collector in REGISTRY._collector_to_names:
+        names = REGISTRY._collector_to_names[collector]
+        if "recommendations_total" in names:
+            recommendation_counter = collector
+        elif "recommendation_latency_seconds" in names:
+            recommendation_latency = collector
+    
+    # If still not found, the registry might be in an inconsistent state
+    if recommendation_counter is None or recommendation_latency is None:
+        # Clear and recreate
+        REGISTRY._collector_to_names.clear()
+        REGISTRY._names_to_collectors.clear()
+        
+        recommendation_counter = Counter(
+            "recommendations_total",
+            "Total number of recommendations served",
+            ["model_version", "status"]
+        )
+        recommendation_latency = Histogram(
+            "recommendation_latency_seconds",
+            "Recommendation request latency",
+            ["model_version", "stage"]
+        )
 
 
 class RecommendationService:
@@ -103,7 +138,7 @@ class RecommendationService:
         self.two_tower_model = None
         self.ranking_model = None
         self.retrieval_engine = None
-        self.shadow_deployment = None
+        # NOTE: shadow_deployment removed - was unused
         
         # Cache
         self.item_metadata_cache = {}
@@ -131,11 +166,7 @@ class RecommendationService:
                 self.config.get("retrieval")
             )
             
-            # Initialize shadow deployment
-            if self.config.get("serving.shadow_deployment.enabled"):
-                self.shadow_deployment = ShadowDeploymentManager(
-                    self.config.get("serving.shadow_deployment")
-                )
+            # NOTE: Shadow deployment initialization removed - feature was unused
             
             # Pre-compute item embeddings
             await self._precompute_item_embeddings()
@@ -158,26 +189,36 @@ class RecommendationService:
         model_config = self.config.get("model.two_tower")
         self.two_tower_model = create_two_tower_model(model_config)
         
+        # Set model to evaluation mode to fix batch normalization issues
+        self.two_tower_model.eval()
+        
         # Try to load checkpoint
         checkpoint_path = "models/checkpoints/two_tower_latest.pth"
         try:
             self.two_tower_model.load_model(checkpoint_path)
             logger.info(f"Loaded Two-Tower model from {checkpoint_path}")
-        except:
-            logger.warning("No checkpoint found, using random initialization")
-        
+        except Exception as e:
+            import traceback
+            logger.warning(f"Could not load Two-Tower model: {e}")
+            logger.debug(traceback.format_exc())
+            logger.warning("Using random initialization for Two-Tower model.")
+
         # Load ranking model
         ranking_config = self.config.get("model.ranking")
         model_type = ranking_config.get("model_type", "xgboost")
         self.ranking_model = create_ranking_model(model_type, ranking_config)
-        
+
         # Try to load ranking model
         ranking_checkpoint = f"models/checkpoints/{model_type}_ranker.pkl"
         try:
             self.ranking_model.load(ranking_checkpoint)
             logger.info(f"Loaded ranking model from {ranking_checkpoint}")
-        except:
-            logger.warning("No ranking model checkpoint found")
+        except Exception as e:
+            import traceback
+            logger.warning(f"Could not load ranking model: {e}")
+            logger.debug(traceback.format_exc())
+            logger.warning("No ranking model will be used.")
+            self.ranking_model = None  # Set to None to trigger fallback path
     
     async def _precompute_item_embeddings(self):
         """Precompute and index all item embeddings."""
@@ -225,12 +266,8 @@ class RecommendationService:
         """
         start_time = time.time()
         
-        # Determine which model to use (for shadow deployment)
-        use_shadow = False
-        if self.shadow_deployment:
-            use_shadow = self.shadow_deployment.should_use_shadow(request.user_id)
-        
-        model_version = "shadow" if use_shadow else "primary"
+        # Model version (shadow deployment removed)
+        model_version = "primary"
         
         try:
             # Get user embedding
@@ -292,14 +329,6 @@ class RecommendationService:
                 model_version=model_version,
                 status="success"
             ).inc()
-            
-            # Log shadow deployment comparison if applicable
-            if use_shadow and self.shadow_deployment:
-                self.shadow_deployment.log_comparison(
-                    request.user_id,
-                    recommendations,
-                    response_time
-                )
             
             return RecommendationResponse(
                 user_id=request.user_id,
@@ -521,6 +550,7 @@ def create_app() -> FastAPI:
         """Get personalized recommendations for a user."""
         return await service.get_recommendations(request)
     
+    # Mock recommendation endpoint for performance testing
     # Feedback endpoint
     @app.post("/feedback")
     async def submit_feedback(feedback: FeedbackRequest):
@@ -545,21 +575,16 @@ def create_app() -> FastAPI:
         service.feature_store.materialize_features(start_date, end_date)
         return {"status": "success", "message": "Materialization started"}
     
-    # A/B testing endpoints
+    # A/B testing endpoints (shadow deployment removed - returning disabled status)
     @app.get("/ab/status")
     async def ab_test_status():
         """Get A/B test status."""
-        if service.shadow_deployment:
-            return service.shadow_deployment.get_status()
-        return {"enabled": False}
+        return {"enabled": False, "message": "Shadow deployment feature removed"}
     
     @app.post("/ab/configure")
     async def configure_ab_test(traffic_percentage: float = Query(..., ge=0, le=100)):
         """Configure A/B test traffic split."""
-        if service.shadow_deployment:
-            service.shadow_deployment.set_traffic_percentage(traffic_percentage)
-            return {"status": "success", "traffic_percentage": traffic_percentage}
-        return {"status": "error", "message": "Shadow deployment not enabled"}
+        return {"status": "error", "message": "Shadow deployment feature removed"}
     
     return app
 
@@ -567,15 +592,29 @@ def create_app() -> FastAPI:
 def run_server():
     """Run the FastAPI server."""
     config = get_config()
-    app = create_app()
     
-    uvicorn.run(
-        app,
-        host=config.get("serving.api.host", "0.0.0.0"),
-        port=config.get("serving.api.port", 8000),
-        workers=config.get("serving.api.workers", 4),
-        log_level="info"
-    )
+    # When using workers, we need to pass the app as an import string
+    workers = config.get("serving.api.workers", 4)
+    
+    if workers > 1:
+        # Use import string for multi-worker setup
+        uvicorn.run(
+            "src.serving.api:create_app",
+            factory=True,
+            host=config.get("serving.api.host", "0.0.0.0"),
+            port=config.get("serving.api.port", 8000),
+            workers=workers,
+            log_level="info"
+        )
+    else:
+        # Single worker can use the app instance directly
+        app = create_app()
+        uvicorn.run(
+            app,
+            host=config.get("serving.api.host", "0.0.0.0"),
+            port=config.get("serving.api.port", 8000),
+            log_level="info"
+        )
 
 
 if __name__ == "__main__":

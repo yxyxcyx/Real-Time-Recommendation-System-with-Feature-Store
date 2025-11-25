@@ -1,6 +1,6 @@
-"""Feature engineering and feature store components."""
+"""Feature store implementations for the recommendation system."""
 
-from .feature_store import FeatureStore
+from .simple_feature_store import SimpleFeatureStore as FeatureStore
 from .feature_definitions import (
     UserFeatures,
     ItemFeatures,

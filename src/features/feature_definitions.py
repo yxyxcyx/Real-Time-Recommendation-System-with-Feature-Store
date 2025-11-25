@@ -3,18 +3,21 @@
 from datetime import timedelta
 from typing import List, Optional
 
-from feast import (
+from .simple_feast_mocks import (
     Entity,
-    Feature,
     FeatureView,
     Field,
     FileSource,
     PushSource,
     RequestSource,
     ValueType,
+    ParquetFormat,
+    Float32,
+    Float64,
+    Int64,
+    String,
+    UnixTimestamp,
 )
-from feast.data_format import ParquetFormat
-from feast.types import Float32, Float64, Int64, String, UnixTimestamp
 
 
 class UserFeatures:
@@ -41,7 +44,7 @@ class UserFeatures:
         
         return FeatureView(
             name="user_profile_features",
-            entities=["user"],
+            entities=[UserFeatures.get_entity()],
             ttl=timedelta(days=30),
             schema=[
                 Field(name="user_id", dtype=String),
@@ -70,7 +73,7 @@ class UserFeatures:
         
         return FeatureView(
             name="user_activity_features",
-            entities=["user"],
+            entities=[UserFeatures.get_entity()],
             ttl=timedelta(hours=24),
             schema=[
                 Field(name="clicks_1h", dtype=Int64),
@@ -112,7 +115,7 @@ class ItemFeatures:
         
         return FeatureView(
             name="item_content_features",
-            entities=["item"],
+            entities=[ItemFeatures.get_entity()],
             ttl=timedelta(days=7),
             schema=[
                 Field(name="item_id", dtype=String),
@@ -141,7 +144,7 @@ class ItemFeatures:
         
         return FeatureView(
             name="item_popularity_features",
-            entities=["item"],
+            entities=[ItemFeatures.get_entity()],
             ttl=timedelta(hours=6),
             schema=[
                 Field(name="views_1h", dtype=Int64),
@@ -176,7 +179,7 @@ class InteractionFeatures:
         
         return FeatureView(
             name="interaction_features",
-            entities=["user", "item"],
+            entities=[UserFeatures.get_entity(), ItemFeatures.get_entity()],
             ttl=timedelta(hours=1),
             schema=[
                 Field(name="user_item_clicks", dtype=Int64),
@@ -213,7 +216,7 @@ class StreamingFeatures:
         
         return FeatureView(
             name="realtime_user_features",
-            entities=["user"],
+            entities=[UserFeatures.get_entity()],
             ttl=timedelta(minutes=5),
             schema=[
                 Field(name="clicks_5min", dtype=Int64),
@@ -235,7 +238,7 @@ class StreamingFeatures:
         
         return FeatureView(
             name="realtime_item_features",
-            entities=["item"],
+            entities=[ItemFeatures.get_entity()],
             ttl=timedelta(minutes=5),
             schema=[
                 Field(name="views_5min", dtype=Int64),

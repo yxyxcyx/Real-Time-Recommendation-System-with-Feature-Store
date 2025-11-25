@@ -547,17 +547,22 @@ class TwoTowerModel(nn.Module):
 
 
 def create_two_tower_model(config: Dict[str, Any]) -> TwoTowerModel:
-    """Factory function to create Two-Tower model from config.
+    """Create a Two-Tower model from configuration.
     
     Args:
         config: Model configuration dictionary
         
     Returns:
-        Initialized TwoTowerModel
+        TwoTowerModel instance
     """
-    # Extract tower configurations
-    user_config = config.get("user_tower", {})
-    item_config = config.get("item_tower", {})
+    # Fix: The config passed is already the two_tower config, not nested under model
+    two_tower_config = config.get("two_tower", {})
+    
+    # Get user tower config
+    user_config = two_tower_config.get("user_tower", {})
+    
+    # Get item tower config
+    item_config = two_tower_config.get("item_tower", {})
     
     # Create user tower
     user_tower = UserTower(

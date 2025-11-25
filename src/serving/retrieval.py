@@ -1,5 +1,6 @@
 """Retrieval layer for candidate generation using ANN search."""
 
+import hashlib
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path

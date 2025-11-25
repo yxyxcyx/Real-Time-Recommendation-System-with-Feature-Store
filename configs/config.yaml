@@ -23,13 +23,17 @@ model:
   two_tower:
     embedding_dim: 128
     user_tower:
-      hidden_layers: [512, 256, 128]
+      input_dim: 50
+      hidden_layers: [178, 128]
       dropout_rate: 0.2
       activation: "relu"
+      use_content_embedding: false
     item_tower:
-      hidden_layers: [512, 256, 128]
+      input_dim: 50
+      hidden_layers: [178, 128]
       dropout_rate: 0.2
       activation: "relu"
+      use_content_embedding: false
     temperature: 0.05
     negative_sampling_ratio: 4
     
@@ -49,7 +53,7 @@ model:
 retrieval:
   index_type: "faiss"  # faiss, milvus, annoy
   faiss:
-    index_factory: "IVF1024,Flat"
+    index_factory: "IVF256,Flat"
     nprobe: 20
     metric: "cosine"
   top_k: 100
@@ -60,7 +64,7 @@ serving:
   api:
     host: "0.0.0.0"
     port: 8000
-    workers: 4
+    workers: 1
     cors_origins: ["*"]
   batch_size: 32
   cache:

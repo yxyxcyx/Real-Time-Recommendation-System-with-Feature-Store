@@ -1,12 +1,8 @@
-"""Monitoring and observability components."""
+"""Monitoring and observability components.
 
-from .metrics import MetricsCollector, PerformanceMonitor
-from .logger import setup_logging
-from .alerts import AlertManager
+Note: This module is currently a placeholder. The metrics.py, logger.py, 
+and alerts.py modules were removed during code cleanup as they were unused.
+Future monitoring implementations should be added here.
+"""
 
-__all__ = [
-    "MetricsCollector",
-    "PerformanceMonitor",
-    "setup_logging",
-    "AlertManager",
-]
+__all__ = []

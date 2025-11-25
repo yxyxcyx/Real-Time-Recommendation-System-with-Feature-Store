@@ -13,83 +13,13 @@ from sklearn.model_selection import train_test_split
 from loguru import logger
 
 from src.config import get_config
+from src.data import generate_synthetic_data, prepare_two_tower_data
 from src.features import FeatureStore, FeatureEngineer
 from src.models import TwoTowerModel, UserTower, ItemTower, create_ranking_model
 
 
-def generate_synthetic_data(num_users=1000, num_items=5000, num_interactions=50000):
-    """Generate synthetic data for training."""
-    logger.info("Generating synthetic training data...")
-    
-    # Generate user features
-    user_features = pd.DataFrame({
-        'user_id': [f'user_{i}' for i in range(num_users)],
-        'age': np.random.randint(18, 65, num_users),
-        'gender': np.random.choice(['M', 'F', 'O'], num_users),
-        'location': np.random.choice(['US', 'UK', 'CA', 'AU'], num_users),
-        'subscription_tier': np.random.choice(['free', 'basic', 'premium'], num_users),
-    })
-    
-    # Add numerical features
-    for i in range(10):
-        user_features[f'user_feat_{i}'] = np.random.randn(num_users)
-    
-    # Generate item features
-    item_features = pd.DataFrame({
-        'item_id': [f'item_{i}' for i in range(num_items)],
-        'category': np.random.choice(['tech', 'sports', 'entertainment', 'news', 'lifestyle'], num_items),
-        'quality_score': np.random.uniform(0.5, 1.0, num_items),
-        'freshness_score': np.random.uniform(0.3, 1.0, num_items),
-    })
-    
-    # Add numerical features
-    for i in range(10):
-        item_features[f'item_feat_{i}'] = np.random.randn(num_items)
-    
-    # Generate interactions (positive samples)
-    interactions = []
-    for _ in range(num_interactions):
-        user_idx = np.random.randint(num_users)
-        item_idx = np.random.randint(num_items)
-        
-        # Simulate some preference patterns
-        user_age = user_features.iloc[user_idx]['age']
-        item_category = item_features.iloc[item_idx]['category']
-        
-        # Young users prefer tech and entertainment
-        if user_age < 30 and item_category in ['tech', 'entertainment']:
-            label = np.random.choice([0, 1], p=[0.2, 0.8])
-        else:
-            label = np.random.choice([0, 1], p=[0.7, 0.3])
-        
-        interactions.append({
-            'user_id': f'user_{user_idx}',
-            'item_id': f'item_{item_idx}',
-            'label': label,
-            'timestamp': pd.Timestamp.now()
-        })
-    
-    interactions_df = pd.DataFrame(interactions)
-    
-    return user_features, item_features, interactions_df
-
-
-def prepare_two_tower_data(user_features, item_features, interactions):
-    """Prepare data for two-tower model training."""
-    logger.info("Preparing data for two-tower model...")
-    
-    # Merge features
-    data = interactions.merge(user_features, on='user_id').merge(item_features, on='item_id')
-    
-    # Extract numerical features
-    user_num_cols = [col for col in user_features.columns if 'user_feat_' in col]
-    item_num_cols = [col for col in item_features.columns if 'item_feat_' in col]
-    
-    user_numerical = torch.tensor(data[user_num_cols].values, dtype=torch.float32)
-    item_numerical = torch.tensor(data[item_num_cols].values, dtype=torch.float32)
-    labels = torch.tensor(data['label'].values, dtype=torch.float32)
-    
-    return user_numerical, item_numerical, labels
+# NOTE: generate_synthetic_data and prepare_two_tower_data moved to src/data/synthetic.py
+# Import them from src.data instead of defining here (DRY consolidation)
 
 
 def train_two_tower_model(config):
@@ -264,18 +194,17 @@ def train_ranking_model(config):
     return model
 
 
-def setup_feature_store(config):
-    """Set up and populate feature store."""
-    logger.info("Setting up feature store...")
-    
-    # Initialize feature store
-    feature_store = FeatureStore(config.get('feature_store', {}))
-    
-    # Generate and save sample data
-    user_data, item_data = feature_store.generate_sample_data()
-    
-    logger.info("Feature store setup completed")
-    return feature_store
+# REMOVED: setup_feature_store() was calling generate_sample_data() which
+# doesn't exist on SimpleFeatureStore. The function was broken and unused.
+# See REFACTORING_BLUEPRINT.md for details.
+#
+# def setup_feature_store(config):
+#     """Set up and populate feature store."""
+#     logger.info("Setting up feature store...")
+#     feature_store = FeatureStore(config.get('feature_store', {}))
+#     user_data, item_data = feature_store.generate_sample_data()  # BROKEN
+#     logger.info("Feature store setup completed")
+#     return feature_store
 
 
 def main():
@@ -285,8 +214,8 @@ def main():
     # Load configuration
     config = get_config()
     
-    # Set up feature store
-    feature_store = setup_feature_store(config)
+    # NOTE: setup_feature_store() removed - was broken (see above)
+    # Feature store initialization should be done separately if needed
     
     # Train Two-Tower model
     two_tower_model = train_two_tower_model(config)
