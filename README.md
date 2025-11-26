@@ -2,7 +2,7 @@
 
 ## Overview
 
-A real-time recommendation system implementing industry best practices, trained and evaluated on the **MovieLens-1M** dataset with reproducible benchmarks.
+A real-time recommendation system trained and evaluated on the **MovieLens-1M** dataset with reproducible benchmarks.
 
 ### **Key Features**
 - **Two-Tower Neural Architecture** - Mixed contrastive loss (explicit + in-batch negatives)
