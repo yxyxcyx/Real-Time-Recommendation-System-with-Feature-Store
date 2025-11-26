@@ -49,14 +49,21 @@ def load_model(checkpoint_path: str, user_dim: int, item_dim: int, device: str) 
     
     checkpoint = torch.load(checkpoint_path, map_location=device)
     
-    # Get embedding dim from checkpoint
-    embedding_dim = checkpoint.get("embedding_dim", 64)
+    # Infer architecture from checkpoint weights
+    user_state = checkpoint["user_tower_state"]
+    # Get hidden layers from weight shapes: mlp.0.weight shape is [first_hidden, input_dim]
+    # mlp.4.weight shape is [second_hidden, first_hidden], etc.
+    first_hidden = user_state["mlp.0.weight"].shape[0]  # 256
+    second_hidden = user_state["mlp.4.weight"].shape[0]  # 128
+    embedding_dim = user_state["mlp.8.weight"].shape[0]  # 128
+    hidden_layers = [first_hidden, second_hidden]
     
-    # Create model architecture
+    logger.info(f"Inferred architecture: hidden_layers={hidden_layers}, embedding_dim={embedding_dim}")
+    
     user_tower = UserTower(
         input_dim=user_dim,
         embedding_dim=embedding_dim,
-        hidden_layers=[128, 64],
+        hidden_layers=hidden_layers,
         dropout_rate=0.2,
         activation="relu"
     )
@@ -64,7 +71,7 @@ def load_model(checkpoint_path: str, user_dim: int, item_dim: int, device: str) 
     item_tower = ItemTower(
         input_dim=item_dim,
         embedding_dim=embedding_dim,
-        hidden_layers=[128, 64],
+        hidden_layers=hidden_layers,
         dropout_rate=0.2,
         activation="relu",
         use_content_embedding=False

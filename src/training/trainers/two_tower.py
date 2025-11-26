@@ -100,7 +100,7 @@ class TwoTowerTrainer:
             user_features = batch["user_features"].to(self.device)
             pos_item_features = batch["pos_item_features"].to(self.device)
             
-            # Forward pass with in-batch negatives
+            # Forward pass
             user_embeddings = self.model.get_user_embeddings({
                 "numerical": user_features, "categorical": {}
             })
@@ -108,8 +108,33 @@ class TwoTowerTrainer:
                 "numerical": pos_item_features, "categorical": {}
             })
             
-            # In-batch negative loss (efficient)
-            loss = self.model.in_batch_negative_loss(user_embeddings, pos_item_embeddings)
+            # Mixed loss strategy: explicit negatives + in-batch negatives
+            # This combines ranking accuracy (explicit) with catalog coverage (in-batch)
+            if "neg_item_features" in batch:
+                neg_item_features = batch["neg_item_features"].to(self.device)
+                # Reshape: [batch, num_neg, feat_dim] -> [batch * num_neg, feat_dim]
+                batch_size, num_neg, feat_dim = neg_item_features.shape
+                neg_item_features_flat = neg_item_features.view(-1, feat_dim)
+                
+                neg_item_embeddings = self.model.get_item_embeddings({
+                    "numerical": neg_item_features_flat, "categorical": {}
+                })
+                
+                # Explicit negative loss (user-specific negatives)
+                explicit_loss = self.model.contrastive_loss(
+                    user_embeddings, pos_item_embeddings, neg_item_embeddings
+                )
+                
+                # In-batch negative loss (catalog diversity)
+                in_batch_loss = self.model.in_batch_negative_loss(
+                    user_embeddings, pos_item_embeddings
+                )
+                
+                # Mixed loss: 70% explicit + 30% in-batch
+                loss = 0.7 * explicit_loss + 0.3 * in_batch_loss
+            else:
+                # Fallback to in-batch negatives only
+                loss = self.model.in_batch_negative_loss(user_embeddings, pos_item_embeddings)
             
             # Backward pass
             self.optimizer.zero_grad()

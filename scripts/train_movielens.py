@@ -40,12 +40,12 @@ def main():
     """Main training function."""
     parser = argparse.ArgumentParser(description="Train Two-Tower model on MovieLens-1M")
     parser.add_argument("--data-path", type=str, default="ml-1m", help="Path to MovieLens-1M")
-    parser.add_argument("--epochs", type=int, default=20, help="Number of epochs")
+    parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=1024, help="Batch size")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
-    parser.add_argument("--embedding-dim", type=int, default=64, help="Embedding dimension")
+    parser.add_argument("--embedding-dim", type=int, default=128, help="Embedding dimension")
     parser.add_argument("--device", type=str, default="auto", help="Device (cpu/cuda/auto)")
-    parser.add_argument("--num-negatives", type=int, default=4, help="Negative samples per positive")
+    parser.add_argument("--num-negatives", type=int, default=16, help="Negative samples per positive")
     args = parser.parse_args()
     
     # Setup logging
@@ -125,12 +125,12 @@ def main():
     
     logger.info(f"Actual feature dimensions - User: {user_feature_dim}, Movie: {movie_feature_dim}")
     
-    # Create model
+    # Create model - larger architecture for better performance
     model_config = {
         "embedding_dim": args.embedding_dim,
-        "hidden_layers": [128, 64],
+        "hidden_layers": [256, 128],  # Larger hidden layers
         "dropout_rate": 0.2,
-        "temperature": 0.1,
+        "temperature": 0.05,  # Lower temperature for sharper similarity
     }
     
     model = create_two_tower_model_for_training(user_feature_dim, movie_feature_dim, model_config)
