@@ -74,7 +74,7 @@ train-movielens:
 	python scripts/train_movielens.py --data-path ml-1m --epochs 20 --batch-size 1024
 
 evaluate:
-	python scripts/evaluate_model.py --checkpoint models/checkpoints/two_tower_best.pth
+	python scripts/evaluate_model.py --checkpoint models/checkpoints/two_tower_latest.pth
 
 
 # Serving

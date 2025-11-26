@@ -63,5 +63,5 @@ EXPOSE 8000 9090
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Default command
-CMD ["python", "-m", "src.serving.api"]
+# Default command - use uvicorn with factory pattern
+CMD ["uvicorn", "src.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

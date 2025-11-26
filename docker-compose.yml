@@ -148,7 +148,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: python -m src.streaming.processor
+    command: python -m src.streaming.kafka_consumer
     environment:
       REDIS_URL: redis://redis:6379
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
