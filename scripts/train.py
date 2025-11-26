@@ -15,7 +15,7 @@ from loguru import logger
 from src.config import get_config
 from src.data import generate_synthetic_data, prepare_two_tower_data
 from src.features import FeatureStore, FeatureEngineer
-from src.models import TwoTowerModel, UserTower, ItemTower, create_ranking_model
+from src.models import TwoTowerModel, UserTower, ItemTower, create_two_tower_model, create_ranking_model
 
 
 # NOTE: generate_synthetic_data and prepare_two_tower_data moved to src/data/synthetic.py
@@ -39,23 +39,8 @@ def train_two_tower_model(config):
         range(len(labels)), test_size=0.2, random_state=42
     )
     
-    # Create model
-    user_tower = UserTower(
-        input_dim=10,  # Number of numerical features
-        embedding_dim=128,
-        hidden_layers=[256, 128],
-        dropout_rate=0.2
-    )
-    
-    item_tower = ItemTower(
-        input_dim=10,  # Number of numerical features
-        embedding_dim=128,
-        hidden_layers=[256, 128],
-        dropout_rate=0.2,
-        use_content_embedding=False  # Simplified for demo
-    )
-    
-    model = TwoTowerModel(user_tower, item_tower, temperature=0.05)
+    # Create model using config (matches what service.py loads)
+    model = create_two_tower_model(config.get('model.two_tower', {}))
     
     # Training setup
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -165,6 +150,12 @@ def prepare_ranking_data(user_features, item_features, interactions):
 def train_ranking_model(config):
     """Train the ranking model."""
     logger.info("Training ranking model...")
+    
+    # Check if ranking model is available (requires xgboost)
+    if create_ranking_model is None:
+        logger.warning("Ranking model not available (xgboost not installed)")
+        logger.warning("Skipping ranking model training. Install with: pip install xgboost")
+        return None
     
     # Generate synthetic data
     user_features, item_features, interactions = generate_synthetic_data()

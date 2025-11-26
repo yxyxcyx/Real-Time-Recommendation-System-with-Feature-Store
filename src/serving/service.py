@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import torch  # Import at top to avoid segfault with Faiss interaction
 from fastapi import HTTPException
 from loguru import logger
 from prometheus_client import Counter, Histogram, REGISTRY
@@ -121,8 +122,6 @@ class RecommendationService:
         """Load ML models."""
         logger.info("Loading models...")
         
-        import torch
-        
         model_config = self.config.get("model.two_tower")
         self.two_tower_model = create_two_tower_model(model_config)
         self.two_tower_model.eval()
@@ -136,42 +135,48 @@ class RecommendationService:
             logger.warning(f"Could not load Two-Tower model: {e}")
             logger.warning("Using random initialization for Two-Tower model.")
 
-        # Load ranking model
-        ranking_config = self.config.get("model.ranking")
-        model_type = ranking_config.get("model_type", "xgboost")
-        self.ranking_model = create_ranking_model(model_type, ranking_config)
+        # Load ranking model (optional - requires xgboost)
+        if create_ranking_model is not None:
+            ranking_config = self.config.get("model.ranking")
+            model_type = ranking_config.get("model_type", "xgboost")
+            self.ranking_model = create_ranking_model(model_type, ranking_config)
 
-        ranking_checkpoint = f"models/checkpoints/{model_type}_ranker.pkl"
-        try:
-            self.ranking_model.load(ranking_checkpoint)
-            logger.info(f"Loaded ranking model from {ranking_checkpoint}")
-        except Exception as e:
-            logger.warning(f"Could not load ranking model: {e}")
+            ranking_checkpoint = f"models/checkpoints/{model_type}_ranker.pkl"
+            try:
+                self.ranking_model.load(ranking_checkpoint)
+                logger.info(f"Loaded ranking model from {ranking_checkpoint}")
+            except Exception as e:
+                logger.warning(f"Could not load ranking model: {e}")
+                self.ranking_model = None
+        else:
+            logger.warning("Ranking model not available (xgboost not installed)")
             self.ranking_model = None
     
     async def _precompute_item_embeddings(self):
         """Precompute and index all item embeddings."""
         logger.info("Precomputing item embeddings...")
         
-        import torch
-        
         # Generate sample items for demo
         num_items = 1000
         item_ids = [f"item_{i}" for i in range(num_items)]
+        logger.info(f"Generated {num_items} item IDs")
         
         item_features = {
-            "numerical": torch.randn(num_items, 50),
+            "numerical": torch.randn(num_items, 10),  # Matches config input_dim
             "categorical": {},
             "content_embeddings": torch.randn(num_items, 768)
         }
+        logger.info("Generated item features")
         
         with torch.no_grad():
             item_embeddings = self.two_tower_model.get_item_embeddings(item_features)
+        logger.info(f"Got embeddings: {item_embeddings.shape}")
         
-        self.retrieval_engine.build_index(
-            item_embeddings.numpy(),
-            item_ids
-        )
+        # Make a contiguous copy to avoid memory issues with Faiss
+        embeddings_np = np.ascontiguousarray(item_embeddings.detach().cpu().numpy(), dtype=np.float32)
+        logger.info(f"Converted to numpy: {embeddings_np.shape}")
+        
+        self.retrieval_engine.build_index(embeddings_np, item_ids)
         
         logger.info(f"Indexed {num_items} items")
     
@@ -267,8 +272,6 @@ class RecommendationService:
             if time.time() - cache_entry["timestamp"] < self.cache_ttl:
                 return cache_entry["embedding"]
         
-        import torch
-        
         try:
             user_features = self.feature_store.get_online_features(
                 {"user": [user_id]},
@@ -276,7 +279,7 @@ class RecommendationService:
             )
         except:
             user_features = {
-                "numerical": torch.randn(1, 50),
+                "numerical": torch.randn(1, 10),
                 "categorical": {}
             }
         
@@ -285,7 +288,7 @@ class RecommendationService:
                 user_embedding = self.two_tower_model.get_user_embeddings(user_features)
             else:
                 user_embedding = self.two_tower_model.get_user_embeddings({
-                    "numerical": torch.randn(1, 50),
+                    "numerical": torch.randn(1, 10),
                     "categorical": {}
                 })
         

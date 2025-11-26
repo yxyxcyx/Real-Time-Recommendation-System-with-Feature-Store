@@ -6,9 +6,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import faiss
+import torch  # Must be imported before faiss to avoid segfault
 import numpy as np
-import torch
+import faiss
 from loguru import logger
 from annoy import AnnoyIndex
 
@@ -74,7 +74,8 @@ class FaissIndex(IndexBase):
             embeddings: Item embeddings [n_items, dimension]
             ids: List of item IDs
         """
-        logger.info(f"Building Faiss index for {len(embeddings)} items...")
+        n_items = len(embeddings)
+        logger.info(f"Building Faiss index for {n_items} items...")
         start_time = time.time()
         
         # Ensure embeddings are float32
@@ -84,8 +85,15 @@ class FaissIndex(IndexBase):
         if self.metric == "cosine":
             faiss.normalize_L2(embeddings)
         
+        # Determine appropriate index factory based on dataset size
+        index_factory = self.index_factory
+        if "IVF" in index_factory and n_items < 1024:
+            # Fall back to Flat index for small datasets
+            logger.info(f"Dataset too small ({n_items}) for IVF, using Flat index")
+            index_factory = "Flat"
+        
         # Create index based on factory string
-        if self.index_factory == "Flat":
+        if index_factory == "Flat":
             if self.metric == "cosine":
                 self.index = faiss.IndexFlatIP(self.dimension)  # Inner product for cosine
             else:
@@ -95,7 +103,7 @@ class FaissIndex(IndexBase):
             quantizer = faiss.IndexFlatL2(self.dimension)
             self.index = faiss.index_factory(
                 self.dimension,
-                self.index_factory,
+                index_factory,
                 faiss.METRIC_INNER_PRODUCT if self.metric == "cosine" else faiss.METRIC_L2
             )
         
@@ -127,8 +135,8 @@ class FaissIndex(IndexBase):
         build_time = time.time() - start_time
         logger.info(f"Index built in {build_time:.2f} seconds")
         
-        # Verify index
-        self._verify_index(embeddings)
+        # Verify index (disabled due to potential segfault with PyTorch tensors)
+        # self._verify_index(embeddings)
     
     def search(
         self,

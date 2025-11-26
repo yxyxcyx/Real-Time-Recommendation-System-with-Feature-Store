@@ -23,14 +23,14 @@ model:
   two_tower:
     embedding_dim: 128
     user_tower:
-      input_dim: 50
-      hidden_layers: [178, 128]
+      input_dim: 10  # Matches synthetic data generation
+      hidden_layers: [256, 128]
       dropout_rate: 0.2
       activation: "relu"
       use_content_embedding: false
     item_tower:
-      input_dim: 50
-      hidden_layers: [178, 128]
+      input_dim: 10  # Matches synthetic data generation
+      hidden_layers: [256, 128]
       dropout_rate: 0.2
       activation: "relu"
       use_content_embedding: false

@@ -81,7 +81,7 @@ evaluate:
 
 
 serve:
-	python -c "from src.serving import run_server; run_server()"
+	uvicorn src.api:create_app --factory --host 0.0.0.0 --port 8000 --reload
 
 serve-prod:
 	@echo "Starting production server with 4 workers..."

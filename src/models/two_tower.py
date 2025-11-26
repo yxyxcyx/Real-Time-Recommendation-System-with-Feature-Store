@@ -555,14 +555,12 @@ def create_two_tower_model(config: Dict[str, Any]) -> TwoTowerModel:
     Returns:
         TwoTowerModel instance
     """
-    # Fix: The config passed is already the two_tower config, not nested under model
-    two_tower_config = config.get("two_tower", {})
-    
+    # The config passed is the two_tower config directly (not nested)
     # Get user tower config
-    user_config = two_tower_config.get("user_tower", {})
+    user_config = config.get("user_tower", {})
     
     # Get item tower config
-    item_config = two_tower_config.get("item_tower", {})
+    item_config = config.get("item_tower", {})
     
     # Create user tower
     user_tower = UserTower(
